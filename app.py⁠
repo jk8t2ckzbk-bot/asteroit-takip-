@@ -1,0 +1,60 @@
+import streamlit as st
+import requests
+import pandas as pd
+import plotly.express as px
+from datetime import date
+
+st.set_page_config(page_title="NASA Asteroit Takip", layout="wide")
+
+st.title("🛰️ NASA Asteroit Takip Paneli")
+st.write("Dünya'ya yakın geçiş yapan gök cisimleri verileri (NASA NeoWs)")
+
+secilen_tarih = st.date_input("Takip Tarihi Seçin", date.today())
+api_key = "DEMO_KEY"
+
+url = f"https://api.nasa.gov/neo/rest/v1/feed?start_date={secilen_tarih}&end_date={secilen_tarih}&api_key={api_key}"
+
+with st.spinner("NASA'dan veriler çekiliyor..."):
+    res = requests.get(url)
+
+if res.status_code == 200:
+    data = res.json()
+    tarih_str = str(secilen_tarih)
+    asteroitler = data["near_earth_objects"].get(tarih_str, [])
+
+    if not asteroitler:
+        st.warning("Bu tarih için kayıtlı asteroit bulunamadı.")
+    else:
+        liste = []
+        for a in asteroitler:
+            liste.append({
+                "İsim": a["name"],
+                "Tahmini Çap (m)": round(a["estimated_diameter"]["meters"]["estimated_diameter_max"], 1),
+                "Mesafe (km)": round(float(a["close_approach_data"][0]["miss_distance"]["kilometers"]), 0),
+                "Hız (km/s)": round(float(a["close_approach_data"][0]["relative_velocity"]["kilometers_per_second"]), 2),
+                "Tehlikeli mi?": "EVET" if a["is_potentially_hazardous_asteroid"] else "HAYIR"
+            })
+
+        df = pd.DataFrame(liste)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Toplam Asteroit", len(df))
+        c2.metric("En Büyüğü", f"{df['Tahmini Çap (m)'].max()} m")
+        c3.metric("En Yakını", f"{int(df['Mesafe (km)'].min()):,} km")
+
+        fig = px.scatter(
+            df,
+            x="Mesafe (km)",
+            y="Tahmini Çap (m)",
+            size="Tahmini Çap (m)",
+            color="Tehlikeli mi?",
+            hover_name="İsim",
+            title="Asteroitlerin Mesafe ve Çap Dağılımı",
+            color_discrete_map={"EVET": "red", "HAYIR": "blue"}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Asteroit Listesi (Çapa Göre Sıralı)")
+        st.dataframe(df.sort_values(by="Tahmini Çap (m)", ascending=False), use_container_width=True)
+else:
+    st.error("NASA API'sine bağlanırken bir sorun oluştu.")
